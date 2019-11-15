@@ -1,0 +1,246 @@
+Conditions:
+  CreateNatGateway: !Or
+    - !Condition 'CreateNatGatewayUpperYes'
+    - !Condition 'CreateNatGatewayLowerYes'
+  CreateNatGatewayLowerYes: !Equals
+    - !Ref 'CreateNatGateway'
+    - 'yes'
+  CreateNatGatewayUpperYes: !Equals
+    - !Ref 'CreateNatGateway'
+    - 'Yes'
+  CreateVpcEndpoints: !Or
+    - !Condition 'CreateVpcEndpointsUpperYes'
+    - !Condition 'CreateVpcEndpointsLowerYes'
+  CreateVpcEndpointsLowerYes: !Equals
+    - !Ref 'CreateEndpoints'
+    - 'yes'
+  CreateVpcEndpointsUpperYes: !Equals
+    - !Ref 'CreateEndpoints'
+    - 'Yes'
+Outputs:
+  SsmPrivateRouteTable:
+    Description: Private RouteTable for SSM
+    Export:
+      Name: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -ssm-private-route-table
+    Value: !Ref 'SsmPrivateRouteTable'
+  SsmPrivateSubnet:
+    Description: Private Subnet for SSM
+    Export:
+      Name: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -ssm-private-subnet
+    Value: !Ref 'SsmPrivateSubnet'
+  SsmSg:
+    Description: Security Group for SSM
+    Export:
+      Name: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -ssm-sg
+    Value: !Ref 'SsmSecurityGroup'
+  SsmVpc:
+    Description: VPC for SSM
+    Export:
+      Name: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -ssm-vpc
+    Value: !Ref 'SsmVpc'
+Parameters:
+  CreateEndpoints:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    ConstraintDescription: '''Yes'' or ''No'' are only options'
+    Default: 'No'
+    Description: Create VPC Endpoints
+    Type: String
+  CreateNatGateway:
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+    ConstraintDescription: '''Yes'' or ''No'' are only options'
+    Default: 'No'
+    Description: Create NAT Gateway
+    Type: String
+  VpcCidr:
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must match following pattern 'xxx.xxx.xxx.xxx/xx'
+    Default: 192.168.0.0/16
+    Description: Cidr block for VPC
+    MaxLength: '18'
+    MinLength: '9'
+    Type: String
+Resources:
+  SsmAttachGateway:
+    Properties:
+      InternetGatewayId: !Ref 'SsmIG'
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::VPCGatewayAttachment
+  SsmEc2MessagesVpcEndpoint:
+    Condition: CreateVpcEndpoints
+    Properties:
+      PrivateDnsEnabled: 'true'
+      SecurityGroupIds:
+        - !Ref 'SsmSecurityGroup'
+      ServiceName: !Join
+        - .
+        - - com
+          - amazonaws
+          - !Ref 'AWS::Region'
+          - ec2messages
+      SubnetIds:
+        - !Ref 'SsmPrivateSubnet'
+      VpcEndpointType: Interface
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::VPCEndpoint
+  SsmEipNatGateway:
+    Condition: CreateNatGateway
+    Type: AWS::EC2::EIP
+  SsmIG:
+    Type: AWS::EC2::InternetGateway
+  SsmNatGateway:
+    Condition: CreateNatGateway
+    DependsOn: SsmEipNatGateway
+    Properties:
+      AllocationId: !GetAtt 'SsmEipNatGateway.AllocationId'
+      SubnetId: !Ref 'SsmPublicSubnet'
+    Type: AWS::EC2::NatGateway
+  SsmPrivateRoute:
+    Condition: CreateNatGateway
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref 'SsmNatGateway'
+      RouteTableId: !Ref 'SsmPrivateRouteTable'
+    Type: AWS::EC2::Route
+  SsmPrivateRouteTable:
+    Properties:
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::RouteTable
+  SsmPrivateSubnet:
+    DependsOn: SsmAttachGateway
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      CidrBlock: !Select
+        - 1
+        - !Cidr
+          - !GetAtt 'SsmVpc.CidrBlock'
+          - 256
+          - 8
+      Tags:
+        - Key: Name
+          Value: Private Subnet
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::Subnet
+  SsmPrivateSubnetRouteTableAssociation:
+    Properties:
+      RouteTableId: !Ref 'SsmPrivateRouteTable'
+      SubnetId: !Ref 'SsmPrivateSubnet'
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  SsmPublicRoute:
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'SsmIG'
+      RouteTableId: !Ref 'SsmPublicRouteTable'
+    Type: AWS::EC2::Route
+  SsmPublicRouteTable:
+    Properties:
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::RouteTable
+  SsmPublicSubnet:
+    DependsOn: SsmAttachGateway
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      CidrBlock: !Select
+        - 0
+        - !Cidr
+          - !GetAtt 'SsmVpc.CidrBlock'
+          - 256
+          - 8
+      Tags:
+        - Key: Name
+          Value: Public Subnet
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::Subnet
+  SsmPublicSubnetRouteTableAssociation:
+    Properties:
+      RouteTableId: !Ref 'SsmPublicRouteTable'
+      SubnetId: !Ref 'SsmPublicSubnet'
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  SsmS3VpcEndpoint:
+    Condition: CreateVpcEndpoints
+    Properties:
+      RouteTableIds:
+        - !Ref 'SsmPrivateRouteTable'
+      ServiceName: !Join
+        - .
+        - - com
+          - amazonaws
+          - !Ref 'AWS::Region'
+          - s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::VPCEndpoint
+  SsmSecurityGroup:
+    Properties:
+      GroupDescription: SG for SSM usage
+      GroupName: SsmSG
+      SecurityGroupIngress:
+        - CidrIp: !GetAtt 'SsmVpc.CidrBlock'
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::SecurityGroup
+  SsmSsmMessagesVpcEndpoint:
+    Condition: CreateVpcEndpoints
+    Properties:
+      PrivateDnsEnabled: 'true'
+      SecurityGroupIds:
+        - !Ref 'SsmSecurityGroup'
+      ServiceName: !Join
+        - .
+        - - com
+          - amazonaws
+          - !Ref 'AWS::Region'
+          - ssmmessages
+      SubnetIds:
+        - !Ref 'SsmPrivateSubnet'
+      VpcEndpointType: Interface
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::VPCEndpoint
+  SsmSsmVpcEndpoint:
+    Condition: CreateVpcEndpoints
+    Properties:
+      PrivateDnsEnabled: 'true'
+      SecurityGroupIds:
+        - !Ref 'SsmSecurityGroup'
+      ServiceName: !Join
+        - .
+        - - com
+          - amazonaws
+          - !Ref 'AWS::Region'
+          - ssm
+      SubnetIds:
+        - !Ref 'SsmPrivateSubnet'
+      VpcEndpointType: Interface
+      VpcId: !Ref 'SsmVpc'
+    Type: AWS::EC2::VPCEndpoint
+  SsmVpc:
+    Properties:
+      CidrBlock: !Ref 'VpcCidr'
+      EnableDnsHostnames: 'true'
+      EnableDnsSupport: 'true'
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: SSM VPC
+    Type: AWS::EC2::VPC

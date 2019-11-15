@@ -1,0 +1,3 @@
+- name: Updating instance
+  become: yes
+  shell: echo "Successfully updated `date`" >> /tmp/date_file

@@ -1,0 +1,3 @@
+- name: Provision instance
+  become: yes
+  shell: echo `date` >> /tmp/date_file

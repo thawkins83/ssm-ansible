@@ -1,0 +1,94 @@
+Parameters:
+  LambdaZipBucket:
+    ConstraintDescription: Must be an existing bucket.'
+    Default: lambda-zip-bucket
+    Description: Bucket which has Lambda Zip file
+    Type: String
+Resources:
+  AnsibleBucket:
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      BucketName: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -code-bucket
+    Type: AWS::S3::Bucket
+  AnsibleLambda:
+    Properties:
+      Code:
+        S3Bucket: !Ref 'LambdaZipBucket'
+        S3Key: ansible_ssm_lambda.zip
+      Environment:
+        Variables:
+          code_bucket: !Ref 'AnsibleBucket'
+          provision_playbook: provision-playbook.yml
+          update_playbook: update-playbook.yml
+      FunctionName: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -ansible-ssm
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt 'AnsibleLambdaRole.Arn'
+      Runtime: python3.7
+    Type: AWS::Lambda::Function
+  AnsibleLambdaRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - ssm:*
+                  - ec2:DescribeInstances
+                Effect: Allow
+                Resource:
+                  - '*'
+              - Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Effect: Allow
+                Resource:
+                  - arn:aws:logs:*:*:*
+          PolicyName: AnsibleLambdaSSM
+      RoleName: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -AnsibleLambdaSSM
+    Type: AWS::IAM::Role
+  CloudWatchEventRuleLambda:
+    Properties:
+      Description: Capture when instance stat changes to 'running' or 'terminated'.
+      EventPattern:
+        detail:
+          state:
+            - running
+            - terminated
+        detail-type:
+          - EC2 Instance State-change Notification
+        source:
+          - aws.ec2
+      Name: !Join
+        - ''
+        - - !Ref 'AWS::StackName'
+          - -instance-state
+      Targets:
+        - Arn: !GetAtt 'AnsibleLambda.Arn'
+          Id: TriggerTarget
+    Type: AWS::Events::Rule
+  CloudWatchLambdaPermission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref 'AnsibleLambda'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt 'CloudWatchEventRuleLambda.Arn'
+    Type: AWS::Lambda::Permission

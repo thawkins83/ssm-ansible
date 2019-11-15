@@ -1,0 +1,22 @@
+Resources:
+  SsmProfile:
+    Properties:
+      InstanceProfileName: SsmProfile
+      Roles:
+        - !Ref 'SsmRole'
+    Type: AWS::IAM::InstanceProfile
+  SsmRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+      RoleName: SsmRole
+    Type: AWS::IAM::Role
