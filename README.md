@@ -23,8 +23,9 @@ The following should be the end result:
 
 
 ### Provision
-* Create an EC2 instance in the private subnet of the vpc created by [ssm_network](cloudformation/ssm_network.yml) and 
-assign the role created by [ssm_global](cloudformation/ssm_global.yml) to the instance. 
+* Create an EC2 instance in the private subnet of the vpc created by [ssm_network](cloudformation/ssm_network.yml), 
+assign the role created by [ssm_global](cloudformation/ssm_global.yml) to the instance, and a tag of 
+Key:ManagedBy, Value:Ansible. 
     * An SSM State Manager Association will be created and apply a provision playbook to the instance.
 * If the instance is stopped, then started again, the Association will be updated and apply an update playbook to the 
 instance.
